@@ -28,7 +28,8 @@ So this runs as a local web page next to Spotify:
 
 ## Setup
 
-    cd ~/lyric-lingo
+    git clone https://github.com/justbasicfacts/lyric-lingo.git
+    cd lyric-lingo
     cp .env.example .env      # then fill in DEEPSEEK_API_KEY
     node server/index.mjs
 
