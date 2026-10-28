@@ -28,6 +28,7 @@ const ui = {
   wordsEmpty: el("words-empty"),
   wordcount: el("wordcount"),
   toggleTranslation: el("toggle-translation"),
+  build: el("build"),
 };
 
 const state = {
@@ -322,7 +323,10 @@ async function transport(action) {
   state.anchor.at = performance.now();
   ui.playpause.textContent = action === "resume" ? "Pause" : "Play";
   const res = await fetch(`/api/${action}`, { method: "POST" }).catch(() => null);
-  if (res && !res.ok) {
+  if (!res) {
+    ui.note.hidden = false;
+    ui.note.textContent = "Cannot reach the local server. Is node server/index.mjs still running?";
+  } else if (!res.ok) {
     ui.note.hidden = false;
     ui.note.textContent = "The player refused that. Is Spotify still open?";
   }
@@ -503,6 +507,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) poll();
 });
 
+ui.build.textContent = MY_BUILD === "dev" ? "" : MY_BUILD;
 initLanguage();
 initTabs();
 initTranslationToggle();

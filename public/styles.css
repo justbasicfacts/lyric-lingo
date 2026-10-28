@@ -53,6 +53,8 @@ button, select { font-family: inherit; }
   align-self: center;
 }
 .tagline { color: var(--faint); font-size: 13px; }
+.build { color: #37443f; font-size: 11px; align-self: center; }
+.build:empty { display: none; }
 
 .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
