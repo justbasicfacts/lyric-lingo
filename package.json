@@ -1,0 +1,14 @@
+{
+  "name": "lyric-lingo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Companion app that follows what you play on Spotify and shows time-synced lyric translations, for language learning.",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

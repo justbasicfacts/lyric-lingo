@@ -1,0 +1,14 @@
+[Unit]
+Description=Lyric Lingo, synced lyric translations for Spotify
+After=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/lyric-lingo
+ExecStart=/usr/bin/env node %h/lyric-lingo/server/index.mjs
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

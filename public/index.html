@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lyric Lingo</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#127925;</text></svg>" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <span class="dot"></span>
+        <h1>Lyric Lingo</h1>
+        <span class="tagline">lyrics in the language you are learning</span>
+      </div>
+      <div class="controls">
+        <label class="select">
+          <span>Translate to</span>
+          <select id="lang"></select>
+        </label>
+        <button id="toggle-translation" class="ghost" title="Show or hide translations (T)">Hide translation</button>
+        <a id="connect" class="primary" href="/login">Connect Spotify</a>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="stage">
+        <div class="now">
+          <img id="art" alt="" class="art" />
+          <div class="meta">
+            <div id="title" class="title">Connecting...</div>
+            <div id="artist" class="artist">&nbsp;</div>
+            <div class="progress">
+              <div class="progress-fill" id="progress"></div>
+            </div>
+            <div class="times">
+              <span id="elapsed">0:00</span>
+              <span id="left">-0:00</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="note" class="note" hidden></div>
+
+        <div id="karaoke" class="karaoke" aria-live="polite">
+          <div class="skeleton">Loading lyrics...</div>
+        </div>
+
+        <div class="transport">
+          <button id="back" class="ghost" title="Back five seconds">Back 5s</button>
+          <button id="playpause" class="primary" title="Play or pause Spotify">Pause</button>
+          <button id="forward" class="ghost" title="Forward five seconds">Forward 5s</button>
+          <span class="source" id="source"></span>
+        </div>
+
+        <p class="hint">
+          Click any line to replay it. Click a word to look it up. Arrow keys jump five seconds, T hides the translation.
+        </p>
+      </section>
+
+      <aside class="side">
+        <div class="tabs">
+          <button class="tab active" data-tab="lyrics">All lines</button>
+          <button class="tab" data-tab="words">Words <span id="wordcount" class="badge">0</span></button>
+        </div>
+        <div id="panel-lyrics" class="panel">
+          <ol id="alllines" class="alllines"></ol>
+        </div>
+        <div id="panel-words" class="panel" hidden>
+          <p id="words-empty" class="empty">Tap a word in the current line and it lands here, with its dictionary form and meaning.</p>
+          <ul id="words" class="words"></ul>
+          <button id="clear-words" class="ghost small">Clear list</button>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
