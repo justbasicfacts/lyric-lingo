@@ -150,40 +150,76 @@ button:active { transform: scale(0.98); }
 }
 
 .karaoke {
+  position: relative;
   flex: 1;
+  min-height: 300px;
+  overflow: hidden;
+  padding: 0 2px;
+  /* fade the column into the card at the top and bottom edges */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 13%, #000 87%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 13%, #000 87%, transparent 100%);
+}
+
+.strip {
+  position: absolute;
+  inset: 0 0 auto 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 12px;
-  padding: 10px 0 6px;
-  min-height: 280px;
+  gap: 2px;
+  transition: transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
+.strip.no-anim { transition: none; }
 
 .line {
-  opacity: 0.32;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-  padding: 6px 10px;
+  /* Fixed font size, emphasis done with scale: transforms leave the layout
+     untouched, so the strip can glide while the type grows. */
+  padding: 7px 12px;
   border-radius: 12px;
   cursor: pointer;
+  transform: scale(0.6);
+  transform-origin: left center;
+  opacity: 0.34;
+  transition:
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.42s ease,
+    background 0.15s ease;
 }
-.line:hover { background: rgba(255, 255, 255, 0.03); opacity: 0.65; }
-.line .orig { line-height: 1.35; }
-.line .trans { color: var(--dim); font-size: 0.72em; line-height: 1.35; margin-top: 4px; }
-
-.line.current { opacity: 1; transform: translateX(2px); }
-.line.current .orig {
-  font-size: clamp(22px, 3.1vw, 34px);
-  font-weight: 650;
+.line .orig {
+  font-size: 30px;
+  line-height: 1.24;
+  font-weight: 600;
   letter-spacing: -0.5px;
 }
-.line.current .trans {
-  font-size: clamp(15px, 1.6vw, 19px);
-  color: var(--accent);
-  font-weight: 500;
-  margin-top: 8px;
+.line .trans {
+  color: var(--dim);
+  font-size: 17px;
+  line-height: 1.3;
+  margin-top: 4px;
 }
-.line.prev .orig, .line.next .orig { font-size: clamp(16px, 1.9vw, 21px); font-weight: 550; }
-.line.past { opacity: 0.18; }
+
+.line.next { opacity: 0.4; }
+.line.past { opacity: 0.2; }
+.line:hover { opacity: 0.62; background: rgba(255, 255, 255, 0.035); }
+
+.line.current {
+  transform: scale(1);
+  opacity: 1;
+}
+.line.current .orig,
+.line.current .trans {
+  animation: line-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.line.current .orig { font-weight: 700; }
+.line.current .trans { color: var(--accent); font-weight: 550; }
+
+/* A short lift as a line takes over, the way Spotify's lyric view settles. */
+@keyframes line-rise {
+  from { transform: translateY(9px); }
+  to { transform: translateY(0); }
+}
+.line.current:hover { background: transparent; }
+
 .line.estimated .orig::after {
   content: " ~";
   color: var(--faint);
@@ -192,12 +228,16 @@ button:active { transform: scale(0.98); }
 }
 
 body.hide-translation .line .trans { display: none; }
-body.hide-translation .line.current::after {
-  content: "translation hidden, press T";
-  display: block;
-  margin-top: 8px;
-  color: var(--faint);
-  font-size: 12px;
+
+@media (max-width: 720px) {
+  .line .orig { font-size: 24px; }
+  .line .trans { font-size: 15px; }
+  .karaoke { min-height: 240px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip, .line { transition: none; }
+  .line.current .orig, .line.current .trans { animation: none; }
 }
 
 .word {

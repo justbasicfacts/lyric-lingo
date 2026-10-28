@@ -38,6 +38,8 @@ Open http://127.0.0.1:8899 and press play in Spotify.
 ## Using it
 
 - The big line is what you are hearing, the smaller green line is its translation.
+- The lyric column glides like Spotify's: the active line grows and lifts into
+  place, the lines it passes shrink and fade back.
 - Click any line in the karaoke view or the "All lines" list to jump there and
   hear it again. This seeks the actual Spotify playback.
 - Pause, Play, Back 5s and Forward 5s drive the real player, not a local

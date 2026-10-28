@@ -39,6 +39,8 @@ const state = {
   anchor: { progress: 0, at: performance.now(), playing: false },
   vocab: readVocab(),
   busy: new Set(),
+  strip: null,
+  lineEls: [],
 };
 
 function readVocab() {
@@ -153,9 +155,12 @@ function lineNode(seg, index, klass) {
   return wrap;
 }
 
-function renderKaraoke(index) {
+function buildKaraoke() {
   const segs = state.data?.segments || [];
+  state.lineEls = [];
+  state.strip = null;
   ui.karaoke.replaceChildren();
+
   if (!segs.length) {
     const empty = document.createElement("div");
     empty.className = "skeleton";
@@ -165,18 +170,34 @@ function renderKaraoke(index) {
     ui.karaoke.append(empty);
     return;
   }
-  const start = Math.max(0, index - 2);
-  const end = Math.min(segs.length, index + 3);
-  if (index < 0 && start === 0) {
-    for (let i = 0; i < Math.min(3, segs.length); i++) {
-      ui.karaoke.append(lineNode(segs[i], i, i === 0 ? "current" : "next"));
-    }
-    return;
-  }
-  for (let i = start; i < end; i++) {
-    const klass = i === index ? "current" : i < index ? "past" : "next";
-    ui.karaoke.append(lineNode(segs[i], i, klass));
-  }
+
+  // Every line lives in the DOM once. Line changes only swap classes and move
+  // the strip, so the browser can animate between states instead of repainting
+  // a fresh list. Transforms keep the layout stable while the type scales.
+  const strip = document.createElement("div");
+  strip.className = "strip no-anim";
+  segs.forEach((seg, i) => {
+    const node = lineNode(seg, i, "");
+    strip.append(node);
+    state.lineEls.push(node);
+  });
+  ui.karaoke.append(strip);
+  state.strip = strip;
+  requestAnimationFrame(() => requestAnimationFrame(() => strip.classList.remove("no-anim")));
+}
+
+function highlightLine(index) {
+  if (!state.lineEls?.length) return;
+  const at = Math.max(0, Math.min(index, state.lineEls.length - 1));
+  state.lineEls.forEach((node, i) => {
+    node.classList.toggle("current", i === at);
+    node.classList.toggle("past", i < at);
+    node.classList.toggle("next", i > at);
+  });
+  const active = state.lineEls[at];
+  if (!active || !state.strip) return;
+  const shift = active.offsetTop + active.offsetHeight / 2 - ui.karaoke.clientHeight * 0.44;
+  state.strip.style.transform = `translate3d(0, ${-shift}px, 0)`;
 }
 
 function renderAllLines() {
@@ -380,7 +401,7 @@ async function poll() {
     // Re-anchor only on a new track or when Spotify's clock really drifted.
     // Preview and demo pages keep reporting the same position, so trust ours.
     const drift = Math.abs(position() - reported);
-    if (newTrack || drift > 1500) {
+    if (newTrack || (!data.track?.demo && drift > 1500)) {
       state.anchor = { progress: reported, at: performance.now(), playing: Boolean(data.playing) };
     } else {
       state.anchor.playing = Boolean(data.playing);
@@ -404,6 +425,7 @@ async function poll() {
       state.trackId = trackKey;
       state.renderedIndex = -2;
       renderAllLines();
+      buildKaraoke();
       renderWords();
       markSavedWords();
       if (preview.get("at") && data.track?.demo) {
@@ -438,7 +460,7 @@ function frame() {
     const index = currentIndex(ms / 1000);
     if (index !== state.renderedIndex) {
       state.renderedIndex = index;
-      renderKaraoke(index);
+      highlightLine(index);
       highlightSidebar(index);
     }
   }
@@ -457,6 +479,8 @@ function initLanguage() {
     state.lang = ui.lang.value;
     localStorage.setItem(LANG_KEY, state.lang);
     state.trackId = null;
+    state.lineEls = [];
+    state.strip = null;
     ui.karaoke.innerHTML = '<div class="skeleton">Translating...</div>';
     poll();
   });
@@ -515,6 +539,8 @@ document.addEventListener("visibilitychange", () => {
 });
 
 ui.build.textContent = MY_BUILD === "dev" ? "" : MY_BUILD;
+window.addEventListener("resize", () => highlightLine(state.renderedIndex));
+
 initLanguage();
 initTabs();
 initTranslationToggle();
