@@ -4,6 +4,8 @@ Follows whatever the Spotify app on this computer is playing and shows the lyric
 line that is playing right now, next to a translation into the language you are
 learning. Click any line to hear it again, click a word to look it up.
 
+![Lyric Lingo](docs/screenshot.png)
+
 ## Why this is a companion app and not a Spotify plugin
 
 Spotify closed its in-client app platform in 2018. There is no supported way to
@@ -43,6 +45,8 @@ Open http://127.0.0.1:8899 and press play in Spotify.
   yourself. Arrow keys jump five seconds, space pauses.
 - "Translate to" changes the target language. Every language is cached per song,
   so switching back is instant and free.
+- No Spotify running? Open http://127.0.0.1:8899/?demo=1 for a demo track with
+  made up lyrics, or /?preview=Sonne&artist=Rammstein to look up any song by name.
 
 ## Configuration
 
@@ -62,7 +66,8 @@ another device (phone, another computer) and nothing is playing locally. Those
 keys are `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and
 `SPOTIFY_REDIRECT_URI`. The redirect URI must be registered in the Spotify app
 dashboard, and the account needs to be one of the app's allowed users. When the
-local app is playing, MPRIS is used and the Web API is never touched.
+local app is playing, MPRIS is used and the Web API is never touched. The
+"Connect Spotify" button only shows up when those keys are set.
 
 ## Optional: start it with the session
 
@@ -92,3 +97,9 @@ local app is playing, MPRIS is used and the Web API is never touched.
 - Translation is machine output. It is good for meaning, not for poetry.
 - The LRCLIB and DeepSeek calls happen on first play of a song; after that the
   answer comes from `data/`.
+- Linux only for now. The player is read over MPRIS, which Windows and macOS do
+  not have. A port would need a different now-playing source.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

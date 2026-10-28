@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { ROOT, DATA, PORT, REDIRECT_URI, hasLLM, loadEnv } from "./env.mjs";
+import { ROOT, DATA, PORT, REDIRECT_URI, hasLLM, hasSpotify, loadEnv } from "./env.mjs";
 import {
   accessToken,
   authorizationUrl,
@@ -126,6 +126,7 @@ async function demoPayload(lang) {
   }));
   return {
     authed: isAuthed(),
+    webApi: hasSpotify(),
     hasLLM: hasLLM(),
     lang,
     track: {
@@ -141,7 +142,7 @@ async function demoPayload(lang) {
     progress: elapsed,
     segments,
     source: "demo",
-    note: "Connect Spotify to follow what you are actually playing.",
+    note: "Demo track with made up lyrics. Open Spotify on this computer and press play: this page follows it automatically, no login needed.",
   };
 }
 
@@ -208,6 +209,7 @@ async function localPlaying(lang) {
   const page = await buildPage(local.track, lang);
   return {
     authed: isAuthed(),
+    webApi: hasSpotify(),
     hasLLM: hasLLM(),
     lang,
     track: local.track,
@@ -241,6 +243,7 @@ async function currentlyPlaying(lang) {
   const page = await buildPage(track, lang);
   return {
     authed: true,
+    webApi: hasSpotify(),
     hasLLM: hasLLM(),
     lang,
     track,
@@ -295,6 +298,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/playing") {
+      if (url.searchParams.get("demo") === "1") return json(res, 200, await demoPayload(lang));
       const local = await localPlaying(lang).catch(() => null);
       if (local) return json(res, 200, local);
       if (!isAuthed()) {
@@ -362,6 +366,7 @@ const server = createServer(async (req, res) => {
       const page = await buildPage(track, lang);
       return json(res, 200, {
         authed: isAuthed(),
+        webApi: hasSpotify(),
         hasLLM: hasLLM(),
         lang,
         track,

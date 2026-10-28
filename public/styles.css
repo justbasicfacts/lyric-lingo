@@ -127,8 +127,8 @@ button:active { transform: scale(0.98); }
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 30px;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: 34px;
+  color: rgba(255, 255, 255, 0.55);
 }
 .meta { min-width: 0; flex: 1; }
 .title { font-size: 17px; font-weight: 650; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -74,7 +74,7 @@ function currentIndex(seconds) {
 
 function renderHeader() {
   const { track, authed } = state.data;
-  ui.connect.hidden = Boolean(authed) || state.data.via === "mpris";
+  ui.connect.hidden = !state.data.webApi || Boolean(authed);
   ui.connect.setAttribute("href", "/login");
   if (!track) {
     ui.title.textContent = "Nothing playing";
@@ -337,7 +337,8 @@ const preview = new URLSearchParams(location.search);
 
 function endpoint() {
   const title = preview.get("preview");
-  if (!title) return `/api/playing?lang=${encodeURIComponent(state.lang)}`;
+  const demo = preview.get("demo") === "1" ? "&demo=1" : "";
+  if (!title) return `/api/playing?lang=${encodeURIComponent(state.lang)}${demo}`;
   const params = new URLSearchParams({
     title,
     artist: preview.get("artist") || "",
