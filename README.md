@@ -40,6 +40,9 @@ Open http://127.0.0.1:8899 and press play in Spotify.
 - The big line is what you are hearing, the smaller green line is its translation.
 - Click any line in the karaoke view or the "All lines" list to jump there and
   hear it again. This seeks the actual Spotify playback.
+- Pause, Play, Back 5s and Forward 5s drive the real player, not a local
+  simulation. The music in Spotify stops when you press Pause. This works
+  without Spotify Premium because it goes through the local app.
 - Click a word to get its dictionary form and meaning. Words collect under the
   "Words" tab and stay there between visits (local storage).
 - "Hide translation" (or the T key) hides the translations so you can test

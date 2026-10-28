@@ -288,13 +288,17 @@ function markSavedWords() {
   }
 }
 
+// True when there is a real player behind the page: the local Spotify app over
+// MPRIS, or the Web API fallback. Demo and preview tracks have nothing to drive.
+const remote = () => Boolean(state.data?.track && !state.data.track.demo);
+
 async function seekTo(index) {
   const seg = state.data?.segments?.[index];
   if (!seg) return;
   const ms = Math.max(0, Math.round(seg.t * 1000));
   state.anchor = { progress: ms, at: performance.now(), playing: state.anchor.playing };
   state.renderedIndex = -2;
-  if (!state.data?.track || state.data.track.demo || !state.data.authed) return;
+  if (!remote()) return;
   try {
     await fetch("/api/seek", {
       method: "POST",
@@ -307,12 +311,21 @@ async function seekTo(index) {
 }
 
 async function transport(action) {
-  if (!state.data?.authed || state.data.track?.demo) {
+  if (!remote()) {
     state.anchor.playing = !state.anchor.playing;
     return;
   }
-  await fetch(`/api/${action}`, { method: "POST" }).catch(() => {});
-  setTimeout(poll, 400);
+  // Flip the local state straight away so the button answers the click, then
+  // let the next poll confirm what the player actually did.
+  state.anchor.playing = action === "resume";
+  state.anchor.at = performance.now();
+  ui.playpause.textContent = action === "resume" ? "Pause" : "Play";
+  const res = await fetch(`/api/${action}`, { method: "POST" }).catch(() => null);
+  if (res && !res.ok) {
+    ui.note.hidden = false;
+    ui.note.textContent = "The player refused that. Is Spotify still open?";
+  }
+  setTimeout(poll, 350);
 }
 
 function nudge(deltaMs) {
@@ -324,7 +337,7 @@ function nudge(deltaMs) {
   });
   state.anchor = { progress: ms, at: performance.now(), playing: state.anchor.playing };
   state.renderedIndex = -2;
-  if (state.data?.authed && state.data.track && !state.data.track.demo) {
+  if (remote()) {
     fetch("/api/seek", {
       method: "POST",
       headers: { "content-type": "application/json" },
