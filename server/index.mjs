@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { ROOT, DATA, PORT, REDIRECT_URI, hasLLM, hasSpotify, loadEnv } from "./env.mjs";
 import {
@@ -24,6 +25,23 @@ await loadEnv();
 await loadTokens();
 
 const PUBLIC = path.join(ROOT, "public");
+
+/**
+ * Build stamp of the front end. Injected into index.html as the cache busting
+ * query on app.js and styles.css, so a browser can never run a stale script
+ * after the files change on disk. Also returned by the API, which lets an open
+ * tab notice a new build and refresh itself.
+ */
+let build = { value: null, at: 0 };
+async function buildStamp() {
+  if (build.value && Date.now() - build.at < 2000) return build.value;
+  const hash = createHash("sha1");
+  for (const name of ["app.js", "styles.css", "index.html"]) {
+    hash.update(await readFile(path.join(PUBLIC, name)).catch(() => ""));
+  }
+  build = { value: hash.digest("hex").slice(0, 10), at: Date.now() };
+  return build.value;
+}
 const SPOTIFY = "https://api.spotify.com/v1";
 const DEFAULT_LANG = process.env.DEFAULT_TARGET_LANG || "English";
 
@@ -298,22 +316,24 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/playing") {
-      if (url.searchParams.get("demo") === "1") return json(res, 200, await demoPayload(lang));
+      if (url.searchParams.get("demo") === "1") {
+        return json(res, 200, { ...(await demoPayload(lang)), build: await buildStamp() });
+      }
       const local = await localPlaying(lang).catch(() => null);
-      if (local) return json(res, 200, local);
+      if (local) return json(res, 200, { ...local, build: await buildStamp() });
       if (!isAuthed()) {
         const demo = await demoPayload(lang);
         demo.note = demo.note || "Open Spotify on this computer and press play. No login needed.";
         return json(res, 200, demo);
       }
       try {
-        return json(res, 200, await currentlyPlaying(lang));
+        return json(res, 200, { ...(await currentlyPlaying(lang)), build: await buildStamp() });
       } catch (err) {
         if (err.status === 401) {
-          return json(res, 200, { ...(await demoPayload(lang)), note: "Spotify session expired, log in again." });
+          return json(res, 200, { ...(await demoPayload(lang)), build: await buildStamp(), note: "Spotify session expired, log in again." });
         }
         if (err.status === 403) {
-          return json(res, 200, { ...(await demoPayload(lang)), note: "Spotify refused the request. Check the app's scopes and that your account has Premium." });
+          return json(res, 200, { ...(await demoPayload(lang)), build: await buildStamp(), note: "Spotify refused the request. Check the app's scopes and that your account has Premium." });
         }
         throw err;
       }
@@ -365,6 +385,7 @@ const server = createServer(async (req, res) => {
       };
       const page = await buildPage(track, lang);
       return json(res, 200, {
+        build: await buildStamp(),
         authed: isAuthed(),
         webApi: hasSpotify(),
         hasLLM: hasLLM(),
@@ -382,6 +403,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
+        build: await buildStamp(),
         authed: isAuthed(),
         localPlayer: await mprisActive().catch(() => false),
         hasLLM: hasLLM(),
@@ -391,7 +413,15 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    if (url.pathname === "/") return sendFile(res, path.join(PUBLIC, "index.html"));
+    if (url.pathname === "/") {
+      const html = await readFile(path.join(PUBLIC, "index.html"), "utf8");
+      const body = html.replaceAll("__BUILD__", await buildStamp());
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-cache",
+      });
+      return res.end(body);
+    }
 
     const safe = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
     return sendFile(res, path.join(PUBLIC, safe));

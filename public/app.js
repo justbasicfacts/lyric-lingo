@@ -1,3 +1,4 @@
+const MY_BUILD = new URL(import.meta.url).searchParams.get("v") || "dev";
 const LANGUAGES = [
   "English", "German", "Spanish", "French", "Italian", "Portuguese", "Dutch",
   "Turkish", "Polish", "Russian", "Ukrainian", "Swedish", "Danish", "Greek",
@@ -382,6 +383,16 @@ async function poll() {
     }
 
     state.data = data;
+    if (data.build && data.build !== MY_BUILD) {
+      // The files changed on disk while this tab was open. Reload once per build
+      // so the page never keeps running a stale script.
+      const key = "lyric-lingo.build";
+      if (sessionStorage.getItem(key) !== data.build) {
+        sessionStorage.setItem(key, data.build);
+        location.reload();
+        return;
+      }
+    }
     renderHeader();
     renderNote();
 
