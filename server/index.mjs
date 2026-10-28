@@ -323,7 +323,11 @@ const server = createServer(async (req, res) => {
       if (local) return json(res, 200, { ...local, build: await buildStamp() });
       if (!isAuthed()) {
         const demo = await demoPayload(lang);
-        demo.note = demo.note || "Open Spotify on this computer and press play. No login needed.";
+        const playerOpen = await mprisActive().catch(() => false);
+        demo.playerOpen = playerOpen;
+        demo.note = playerOpen
+          ? "The Spotify app is open but nothing is playing. Press play in Spotify and this page follows it."
+          : "The Spotify app is not running on this computer. Start it and press play, then this page follows the song. What you see now is a demo track with made up lyrics.";
         return json(res, 200, demo);
       }
       try {

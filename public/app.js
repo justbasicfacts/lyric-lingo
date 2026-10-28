@@ -411,7 +411,14 @@ async function poll() {
         state.anchor.at = performance.now();
       }
     }
-    ui.playpause.textContent = data.playing ? "Pause" : "Play";
+      ui.playpause.textContent = data.playing ? "Pause" : "Play";
+    // In demo mode the transport only moves this page, so say that out loud
+    // instead of letting a click look broken.
+    const demoOnly = !remote();
+    for (const id of ["back", "playpause", "forward"]) {
+      const button = el(id);
+      button.title = demoOnly ? "Demo track: this only moves the demo page" : "";
+    }
     const duration = data.track?.durationMs || 0;
     ui.left.textContent = duration ? `-${clock(Math.max(0, duration - position()))}` : "";
   } catch (err) {

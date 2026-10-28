@@ -104,6 +104,20 @@ local app is playing, MPRIS is used and the Web API is never touched. The
 - Linux only for now. The player is read over MPRIS, which Windows and macOS do
   not have. A port would need a different now-playing source.
 
+## If it does not work
+
+- "The Spotify app is not running on this computer": start the desktop app.
+  The web player in a browser does not publish MPRIS, so it cannot be followed.
+- The page shows "Lernlied (demo)": that is the demo fallback. The transport
+  buttons then only move the demo page, they cannot touch real playback.
+- The music does not stop when you press Pause: check
+  `playerctl -p spotify status` in a terminal. If it says no players found, the
+  app is closed or its D-Bus interface is sandboxed away; `playerctl -l` lists
+  what is visible.
+- The page looks old after a change: the small build id next to the title shows
+  what the browser actually runs. It reloads itself when the server reports a
+  newer build.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
