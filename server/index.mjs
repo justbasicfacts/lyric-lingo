@@ -11,14 +11,16 @@ import {
   isAuthed,
   loadTokens,
 } from "./auth.mjs";
-import { cacheKey, findLyrics, readCache, writeCache } from "./lyrics.mjs";
+import { cacheKey, describeTrack, findLyrics, readCache, writeCache } from "./lyrics.mjs";
 import { translateLines, translateWord } from "./translate.mjs";
 import {
+  listPlayers,
   mprisActive,
   mprisNowPlaying,
   mprisPause,
   mprisPlay,
   mprisSeek,
+  pickPlayer,
 } from "./player.mjs";
 
 await loadEnv();
@@ -58,6 +60,15 @@ const MIME = {
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".webmanifest": "application/manifest+json",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".webm": "video/webm",
+  ".mkv": "video/x-matroska",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".flac": "audio/flac",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
 };
 
 function json(res, status, body) {
@@ -221,16 +232,43 @@ async function buildPage(track, lang) {
   return value;
 }
 
-async function localPlaying(lang) {
-  const local = await mprisNowPlaying().catch(() => null);
+/** Clean what a browser reports ("Artist - Song (Official Video)") for display. */
+function tidyTrack(track) {
+  const [guess] = describeTrack({ title: track.title, artist: track.artist });
+  if (!guess?.title) return track;
+  if (guess.title !== track.title || guess.artist !== track.artist) {
+    return {
+      ...track,
+      rawTitle: track.title,
+      rawArtist: track.artist,
+      title: guess.title,
+      artist: guess.artist || track.artist,
+    };
+  }
+  return track;
+}
+
+async function localPlaying(lang, requested) {
+  const entries = await listPlayers().catch(() => []);
+  const local = pickPlayer(entries, requested);
   if (!local) return null;
-  const page = await buildPage(local.track, lang);
+
+  const track = tidyTrack(local.track);
+  const page = await buildPage(track, lang);
   return {
     authed: isAuthed(),
     webApi: hasSpotify(),
     hasLLM: hasLLM(),
     lang,
-    track: local.track,
+    track,
+    player: { name: local.player, label: local.label, browser: local.browser },
+    players: entries.map((e) => ({
+      name: e.player,
+      label: e.label,
+      playing: e.playing,
+      title: tidyTrack(e.track).title,
+      artist: tidyTrack(e.track).artist,
+    })),
     playing: local.playing,
     progress: local.positionMs,
     segments: page.segments,
@@ -319,15 +357,16 @@ const server = createServer(async (req, res) => {
       if (url.searchParams.get("demo") === "1") {
         return json(res, 200, { ...(await demoPayload(lang)), build: await buildStamp() });
       }
-      const local = await localPlaying(lang).catch(() => null);
+      const wanted = url.searchParams.get("player") || undefined;
+      const local = await localPlaying(lang, wanted).catch(() => null);
       if (local) return json(res, 200, { ...local, build: await buildStamp() });
       if (!isAuthed()) {
         const demo = await demoPayload(lang);
         const playerOpen = await mprisActive().catch(() => false);
         demo.playerOpen = playerOpen;
         demo.note = playerOpen
-          ? "The Spotify app is open but nothing is playing. Press play in Spotify and this page follows it."
-          : "The Spotify app is not running on this computer. Start it and press play, then this page follows the song. What you see now is a demo track with made up lyrics.";
+          ? "A player is open but nothing is playing. Press play, in Spotify, a browser tab, VLC, whatever you use, and this page follows it."
+          : "No player is running on this computer. Start Spotify, or play something in a browser, VLC or any other app that speaks MPRIS. What you see now is a demo track with made up lyrics.";
         return json(res, 200, demo);
       }
       try {
@@ -346,21 +385,39 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/seek" && req.method === "POST") {
       const body = await readBody(req);
       const position = Math.max(0, Math.round(Number(body.positionMs) || 0));
-      const handled = await mprisSeek(position).catch(() => false);
-      if (!handled) await spotify(`/me/player/seek?position_ms=${position}`, { method: "PUT" });
-      return json(res, 200, { ok: true, position, via: handled ? "mpris" : "web" });
+      const local = await mprisActive().catch(() => false);
+      const handled = await mprisSeek(position, body.player).catch(() => false);
+      if (handled) return json(res, 200, { ok: true, position, via: "mpris" });
+      // Never redirect an explicit request to a different app or device.
+      if (local) {
+        return json(res, 409, { ok: false, error: "That player is not available any more." });
+      }
+      await spotify(`/me/player/seek?position_ms=${position}`, { method: "PUT" });
+      return json(res, 200, { ok: true, position, via: "web" });
     }
 
     if (url.pathname === "/api/pause" && req.method === "POST") {
-      const handled = await mprisPause().catch(() => false);
-      if (!handled) await spotify("/me/player/pause", { method: "PUT" });
-      return json(res, 200, { ok: true, via: handled ? "mpris" : "web" });
+      const body = await readBody(req);
+      const local = await mprisActive().catch(() => false);
+      const handled = await mprisPause(body.player).catch(() => false);
+      if (handled) return json(res, 200, { ok: true, via: "mpris" });
+      if (local) {
+        return json(res, 409, { ok: false, error: "That player is not available any more." });
+      }
+      await spotify("/me/player/pause", { method: "PUT" });
+      return json(res, 200, { ok: true, via: "web" });
     }
 
     if (url.pathname === "/api/resume" && req.method === "POST") {
-      const handled = await mprisPlay().catch(() => false);
-      if (!handled) await spotify("/me/player/play", { method: "PUT" });
-      return json(res, 200, { ok: true, via: handled ? "mpris" : "web" });
+      const body = await readBody(req);
+      const local = await mprisActive().catch(() => false);
+      const handled = await mprisPlay(body.player).catch(() => false);
+      if (handled) return json(res, 200, { ok: true, via: "mpris" });
+      if (local) {
+        return json(res, 409, { ok: false, error: "That player is not available any more." });
+      }
+      await spotify("/me/player/play", { method: "PUT" });
+      return json(res, 200, { ok: true, via: "web" });
     }
 
     if (url.pathname === "/api/word" && req.method === "POST") {
@@ -404,6 +461,29 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (url.pathname === "/api/players") {
+      const entries = await listPlayers().catch(() => []);
+      return json(res, 200, {
+        build: await buildStamp(),
+        auto: pickPlayer(entries, null)?.player || null,
+        players: entries.map((e) => {
+          const tidy = tidyTrack(e.track);
+          return {
+            name: e.player,
+            label: e.label,
+            browser: e.browser,
+            playing: e.playing,
+            positionMs: e.positionMs,
+            title: tidy.title,
+            rawTitle: e.track.title,
+            artist: tidy.artist,
+            durationMs: e.track.durationMs,
+            image: e.track.image,
+          };
+        }),
+      });
+    }
+
     if (url.pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -427,7 +507,13 @@ const server = createServer(async (req, res) => {
       return res.end(body);
     }
 
-    const safe = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
+    let requested = url.pathname;
+    try {
+      requested = decodeURIComponent(url.pathname);
+    } catch {
+      /* malformed escape, fall through with the raw path */
+    }
+    const safe = path.normalize(requested).replace(/^(\.\.[/\\])+/, "");
     return sendFile(res, path.join(PUBLIC, safe));
   } catch (err) {
     console.error(err);
@@ -440,6 +526,6 @@ server.listen(PORT, "127.0.0.1", async () => {
   console.log(`Spotify redirect URI must be registered as: ${REDIRECT_URI}`);
   const local = await mprisActive().catch(() => false);
   console.log(
-    `Player: ${local ? "local Spotify app over MPRIS" : isAuthed() ? "Spotify Web API" : "demo only"} | DeepSeek: ${hasLLM() ? "ready" : "missing key"}`
+    `Players over MPRIS: ${local ? "found" : "none"} | DeepSeek: ${hasLLM() ? "ready" : "missing key"}`
   );
 });

@@ -7,6 +7,7 @@ const LANGUAGES = [
 
 const WORDS_KEY = "lyric-lingo.words.v1";
 const LANG_KEY = "lyric-lingo.lang.v1";
+const PLAYER_KEY = "lyric-lingo.player.v1";
 const HIDE_KEY = "lyric-lingo.hide.v1";
 
 const el = (id) => document.getElementById(id);
@@ -29,10 +30,13 @@ const ui = {
   wordcount: el("wordcount"),
   toggleTranslation: el("toggle-translation"),
   build: el("build"),
+  player: el("player"),
+  playerWrap: el("player-wrap"),
 };
 
 const state = {
   lang: localStorage.getItem(LANG_KEY) || "English",
+  player: localStorage.getItem(PLAYER_KEY) || "",
   data: null,
   trackId: null,
   renderedIndex: -2,
@@ -76,6 +80,41 @@ function currentIndex(seconds) {
   return index;
 }
 
+function renderPlayerPicker(players) {
+  if (players.length < 2) {
+    ui.playerWrap.hidden = true;
+    if (ui.player.dataset.signature) {
+      ui.player.replaceChildren();
+      delete ui.player.dataset.signature;
+    }
+    return;
+  }
+  ui.playerWrap.hidden = false;
+  const signature = players
+    .map((p) => `${p.name}:${p.playing ? 1 : 0}:${p.title}`)
+    .join("|");
+  // Rebuilding while the dropdown is open would close it, so only touch the
+  // options when the set of players or their state actually changed.
+  if (ui.player.dataset.signature === signature) return;
+  ui.player.dataset.signature = signature;
+
+  const current = state.player || "";
+  ui.player.replaceChildren();
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = "Automatic";
+  ui.player.append(auto);
+  for (const p of players) {
+    const option = document.createElement("option");
+    option.value = p.name;
+    option.textContent = `${p.label}${p.playing ? " ▶" : ""}`;
+    option.title = [p.artist, p.title].filter(Boolean).join(" - ");
+    if (p.name === current) option.selected = true;
+    ui.player.append(option);
+  }
+  if (!current) auto.selected = true;
+}
+
 function renderHeader() {
   const { track, authed } = state.data;
   ui.connect.hidden = !state.data.webApi || Boolean(authed);
@@ -93,10 +132,13 @@ function renderHeader() {
   else ui.art.removeAttribute("src");
 
   const bits = [];
+  if (state.data.player?.label) bits.push(`via ${state.data.player.label}`);
   if (track.demo) bits.push("demo track");
   if (state.data.source) bits.push(state.data.source.replace("lrclib-", "lyrics "));
   if (state.data.sourceLanguage) bits.push(`from ${state.data.sourceLanguage}`);
   ui.source.textContent = bits.join(" · ");
+
+  renderPlayerPicker(state.data.players || []);
 }
 
 function renderNote() {
@@ -326,7 +368,7 @@ async function seekTo(index) {
     await fetch("/api/seek", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ positionMs: ms }),
+      body: JSON.stringify({ positionMs: ms, player: state.player || state.data?.player?.name }),
     });
   } catch {
     /* the next poll re-syncs anyway */
@@ -343,13 +385,25 @@ async function transport(action) {
   state.anchor.playing = action === "resume";
   state.anchor.at = performance.now();
   ui.playpause.textContent = action === "resume" ? "Pause" : "Play";
-  const res = await fetch(`/api/${action}`, { method: "POST" }).catch(() => null);
+  const res = await fetch(`/api/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ player: state.player || state.data?.player?.name }),
+  }).catch(() => null);
   if (!res) {
     ui.note.hidden = false;
     ui.note.textContent = "Cannot reach the local server. Is node server/index.mjs still running?";
   } else if (!res.ok) {
+    let message = "The player refused that. Is it still open?";
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* keep the generic message */
+    }
     ui.note.hidden = false;
-    ui.note.textContent = "The player refused that. Is Spotify still open?";
+    ui.note.textContent = message;
+    setTimeout(poll, 300);
   }
   setTimeout(poll, 350);
 }
@@ -367,7 +421,10 @@ function nudge(deltaMs) {
     fetch("/api/seek", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ positionMs: Math.round(ms) }),
+      body: JSON.stringify({
+        positionMs: Math.round(ms),
+        player: state.player || state.data?.player?.name,
+      }),
     }).catch(() => {});
   }
 }
@@ -377,7 +434,8 @@ const preview = new URLSearchParams(location.search);
 function endpoint() {
   const title = preview.get("preview");
   const demo = preview.get("demo") === "1" ? "&demo=1" : "";
-  if (!title) return `/api/playing?lang=${encodeURIComponent(state.lang)}${demo}`;
+  const who = state.player ? `&player=${encodeURIComponent(state.player)}` : "";
+  if (!title) return `/api/playing?lang=${encodeURIComponent(state.lang)}${demo}${who}`;
   const params = new URLSearchParams({
     title,
     artist: preview.get("artist") || "",
@@ -486,6 +544,19 @@ function initLanguage() {
   });
 }
 
+function initPlayerPicker() {
+  ui.player.addEventListener("change", () => {
+    state.player = ui.player.value;
+    localStorage.setItem(PLAYER_KEY, state.player);
+    state.trackId = null;
+    state.renderedIndex = -2;
+    state.lineEls = [];
+    state.strip = null;
+    ui.karaoke.innerHTML = '<div class="skeleton">Switching player...</div>';
+    poll();
+  });
+}
+
 function initTabs() {
   for (const tab of document.querySelectorAll(".tab")) {
     tab.addEventListener("click", () => {
@@ -541,6 +612,7 @@ document.addEventListener("visibilitychange", () => {
 ui.build.textContent = MY_BUILD === "dev" ? "" : MY_BUILD;
 window.addEventListener("resize", () => highlightLine(state.renderedIndex));
 
+initPlayerPicker();
 initLanguage();
 initTabs();
 initTranslationToggle();

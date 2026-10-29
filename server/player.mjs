@@ -2,9 +2,10 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 
 /**
- * Reads the local Spotify desktop client over MPRIS (D-Bus). This needs no
- * login, no API key and no Premium: whatever the app is playing is right there,
- * including the playback position, which is exactly what lyric sync needs.
+ * Reads whatever media player is running on this machine over MPRIS (D-Bus).
+ * Spotify, a browser playing YouTube, VLC, mpv, Rhythmbox, Tidal, they all
+ * publish the same interface, so one reader covers every app. No login, no API
+ * key, and the playback position comes along for free, which lyric sync needs.
  */
 const DBUS =
   process.env.DBUS_SESSION_BUS_ADDRESS ||
@@ -12,12 +13,19 @@ const DBUS =
 
 const ENV = { ...process.env, DBUS_SESSION_BUS_ADDRESS: DBUS };
 
-const PLAYERS = (process.env.MPRIS_PLAYERS || "spotify")
+/**
+ * When several players are open, this order decides who wins a tie. Unlisted
+ * players still show up in the picker, they just rank after these.
+ */
+const PREFERRED = (
+  process.env.MPRIS_PLAYERS ||
+  "spotify,chromium,chrome,brave,firefox,vivaldi,opera,mpv,vlc,tidal,deezer,cider,strawberry,rhythmbox,elisa,lollypop,clementine,audacious"
+)
   .split(",")
-  .map((s) => s.trim())
+  .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
-function playerctl(args, timeout = 4000) {
+function playerctl(args, timeout = 5000) {
   return new Promise((resolve) => {
     execFile("playerctl", args, { env: ENV, timeout }, (err, stdout) => {
       resolve(err ? null : stdout.trim());
@@ -25,15 +33,36 @@ function playerctl(args, timeout = 4000) {
   });
 }
 
-async function firstPlayer() {
-  const names = (await playerctl(["-l"])) || "";
-  const list = names.split("\n").map((n) => n.trim()).filter(Boolean);
-  for (const wanted of PLAYERS) {
-    const hit = list.find((n) => n === wanted || n.startsWith(`${wanted}.`));
-    if (hit) return hit;
-  }
-  return null;
+/** chromium.instance470868 -> Chrome, spotify -> Spotify, mpv -> mpv */
+export function playerLabel(name) {
+  const base = name.split(".")[0].toLowerCase();
+  const table = {
+    spotify: "Spotify",
+    chromium: "Chrome",
+    chrome: "Chrome",
+    "brave-browser": "Brave",
+    brave: "Brave",
+    firefox: "Firefox",
+    vivaldi: "Vivaldi",
+    opera: "Opera",
+    mpv: "mpv",
+    vlc: "VLC",
+    tidal: "Tidal",
+    deezer: "Deezer",
+    cider: "Cider",
+    strawberry: "Strawberry",
+    rhythmbox: "Rhythmbox",
+    elisa: "Elisa",
+    lollypop: "Lollypop",
+    clementine: "Clementine",
+    audacious: "Audacious",
+  };
+  return table[base] || base.charAt(0).toUpperCase() + base.slice(1);
 }
+
+/** Browsers can play anything, so their label is only the app name. */
+export const isBrowser = (name) =>
+  /^(chromium|chrome|brave|firefox|vivaldi|opera|edge)/i.test(name);
 
 const FORMAT = [
   "{{status}}",
@@ -45,65 +74,130 @@ const FORMAT = [
   "{{position}}",
 ].join("\u001f");
 
-/**
- * @returns {Promise<null | { track: object, playing: boolean, positionMs: number }>}
- */
-export async function mprisNowPlaying() {
-  const player = await firstPlayer();
-  if (!player) return null;
+const trackId = (artist, title, durationMs) =>
+  "mpris-" +
+  createHash("sha1")
+    .update(`${artist}|${title}|${durationMs}`)
+    .digest("hex")
+    .slice(0, 16);
 
-  const raw = await playerctl(["-p", player, "metadata", "--format", FORMAT]);
+async function readPlayer(name) {
+  const raw = await playerctl(["-p", name, "metadata", "--format", FORMAT]);
   if (!raw) return null;
 
   const [status, artist, title, album, length, artUrl, position] = raw.split("\u001f");
-  if (!title || title === "Spotify" || title === "Advertisement") return null;
+  if (!title) return null;
+  if (/^(spotify|advertisement)$/i.test(title.trim())) return null;
 
   const durationMs = Math.round(Number(length) / 1000) || 0;
   const positionMs = Math.round(Number(position) / 1000) || 0;
-  const id =
-    "mpris-" +
-    createHash("sha1")
-      .update(`${artist}|${title}|${album}|${durationMs}`)
-      .digest("hex")
-      .slice(0, 16);
+  const label = playerLabel(name);
 
   return {
-    player,
+    player: name,
+    label,
+    browser: isBrowser(name),
     playing: status === "Playing",
     positionMs,
     track: {
-      id,
+      id: trackId(artist, title, durationMs),
       title,
       artist: artist || "",
       album: album || "",
+      // A browser often reports its own cached art as a file:// path, which the
+      // page cannot load. Only absolute http(s) art is useful here.
       image: artUrl && /^https?:\/\//.test(artUrl) ? artUrl : null,
       durationMs,
       url: null,
       demo: false,
       source: "mpris",
+      player: name,
+      playerLabel: label,
+      browser: isBrowser(name),
     },
   };
 }
 
-export async function mprisSeek(positionMs) {
-  const player = await firstPlayer();
-  if (!player) return false;
+/** Every MPRIS player with a track loaded, ranked by the preference order. */
+export async function listPlayers() {
+  const names = await playerctl(["-l"]);
+  if (!names) return [];
+
+  const list = names.split("\n").map((n) => n.trim()).filter(Boolean);
+  const rank = (name) => {
+    const base = name.split(".")[0].toLowerCase();
+    const index = PREFERRED.findIndex((p) => base === p || base.startsWith(p));
+    return index === -1 ? PREFERRED.length : index;
+  };
+  list.sort((a, b) => rank(a) - rank(b));
+
+  const out = [];
+  for (const name of list) {
+    const entry = await readPlayer(name).catch(() => null);
+    if (entry) out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * Pick the player to follow: whatever is actually playing wins, otherwise the
+ * first one in preference order that has a track loaded.
+ */
+export function pickPlayer(entries, requested) {
+  if (!entries.length) return null;
+  if (requested) {
+    const exact = entries.find((e) => e.player === requested);
+    if (exact) return exact;
+    const loose = entries.find((e) => e.player.startsWith(requested));
+    if (loose) return loose;
+  }
+  const playing = entries.filter((e) => e.playing);
+  return playing[0] || entries[0];
+}
+
+export async function mprisNowPlaying(requested) {
+  return pickPlayer(await listPlayers(), requested);
+}
+
+/**
+ * Resolve the player a transport call should touch. An explicit request is
+ * honoured exactly or not at all: if that player is gone, the call does
+ * nothing. Substituting another app here would pause somebody else's music.
+ */
+async function target(requested) {
+  const names = (await playerctl(["-l"])) || "";
+  const list = names.split("\n").map((n) => n.trim()).filter(Boolean);
+
+  if (requested) {
+    const exact = list.find((n) => n === requested);
+    if (exact) return exact;
+    const loose = list.find((n) => n.startsWith(requested));
+    return loose || null;
+  }
+  const best = pickPlayer(await listPlayers(), null);
+  return best?.player || null;
+}
+
+export async function mprisSeek(positionMs, requested) {
+  const name = await target(requested);
+  if (!name) return false;
   const seconds = (Math.max(0, positionMs) / 1000).toFixed(3);
-  return (await playerctl(["-p", player, "position", seconds])) !== null;
+  return (await playerctl(["-p", name, "position", seconds])) !== null;
 }
 
-export async function mprisPause() {
-  const player = await firstPlayer();
-  if (!player) return false;
-  return (await playerctl(["-p", player, "pause"])) !== null;
+export async function mprisPause(requested) {
+  const name = await target(requested);
+  if (!name) return false;
+  return (await playerctl(["-p", name, "pause"])) !== null;
 }
 
-export async function mprisPlay() {
-  const player = await firstPlayer();
-  if (!player) return false;
-  return (await playerctl(["-p", player, "play"])) !== null;
+export async function mprisPlay(requested) {
+  const name = await target(requested);
+  if (!name) return false;
+  return (await playerctl(["-p", name, "play"])) !== null;
 }
 
 export async function mprisActive() {
-  return (await firstPlayer()) !== null;
+  const names = await playerctl(["-l"]);
+  return Boolean(names && names.trim());
 }

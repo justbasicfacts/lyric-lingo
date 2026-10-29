@@ -1,27 +1,46 @@
 # Lyric Lingo
 
-Follows whatever the Spotify app on this computer is playing and shows the lyric
-line that is playing right now, next to a translation into the language you are
-learning. Click any line to hear it again, click a word to look it up.
+Follows whatever is playing on this computer and shows the lyric line that is
+playing right now, next to a translation into the language you are learning.
+Click any line to hear it again, click a word to look it up.
+
+It follows any player that publishes MPRIS, which on Linux is nearly all of them:
+the Spotify app, YouTube or YouTube Music in a browser tab, VLC, mpv, Rhythmbox,
+Strawberry, Elisa, Tidal, Deezer. One reader, every app.
 
 ![Lyric Lingo](docs/screenshot.png)
 
-## Why this is a companion app and not a Spotify plugin
+## Why this is a companion app and not a plugin
 
-Spotify closed its in-client app platform in 2018. There is no supported way to
-add a panel inside the Spotify window, and third-party clients are not allowed.
-So this runs as a local web page next to Spotify:
+Spotify closed its in-client app platform in 2018, and browsers do not let a page
+read another tab's media either. There is no supported way to put a panel inside
+the player window. So this runs as a local web page next to the player:
 
-- Spotify desktop app plays the music, as usual.
-- This app reads the track and the playback position from the app over MPRIS
-  (D-Bus), so it needs no login, no API key and no Premium.
+- The app that plays the music keeps doing that, untouched.
+- This app reads the track and the playback position over MPRIS (D-Bus), so it
+  needs no login, no API key and no Premium.
 - Lyrics come from LRCLIB, which supplies time-stamped (LRC) lyrics.
 - Translations come from DeepSeek, one call per song, cached on disk.
+
+## What "works with YouTube" means
+
+A browser publishes an MPRIS entry while a tab is actually playing, so a YouTube
+video is readable like any other track. Two things make that usable:
+
+- The title needs cleaning. YouTube reports the video title
+  ("Artist - Song (Official Video) (4K Remaster)") with the channel as the artist.
+  `server/lyrics.mjs` strips the decoration, splits "Artist - Song", drops
+  "- Topic" and VEVO suffixes, and tries the plausible artist/title pairs.
+- Browsers expose only what the page tells them. A video without a media session,
+  a stalled tab, or a tab that is not playing shows up as nothing at all.
+
+The same path covers local media files: players that report a filename
+("Artist - Song.mp4") get the extension stripped before the lookup.
 
 ## Requirements
 
 - Linux with a desktop session (MPRIS is how the player is read)
-- Spotify desktop app, installed as deb, snap or Flatpak
+- Any MPRIS player: Spotify desktop, a browser, VLC, mpv, Rhythmbox...
 - `playerctl` (`sudo apt install playerctl`)
 - Node 20 or newer
 - A DeepSeek API key for the translations (optional, the lyrics still work)
@@ -33,7 +52,8 @@ So this runs as a local web page next to Spotify:
     cp .env.example .env      # then fill in DEEPSEEK_API_KEY
     node server/index.mjs
 
-Open http://127.0.0.1:8899 and press play in Spotify.
+Open http://127.0.0.1:8899 and press play anywhere in Spotify, in a browser tab,
+or in any other player.
 
 ## Using it
 
@@ -49,6 +69,9 @@ Open http://127.0.0.1:8899 and press play in Spotify.
   "Words" tab and stay there between visits (local storage).
 - "Hide translation" (or the T key) hides the translations so you can test
   yourself. Arrow keys jump five seconds, space pauses.
+- If more than one player is open, a "Playing in" picker appears. Automatic
+  follows whatever is actually playing; pick one to pin the page to it. Pause,
+  Play and the seeks then go to that player and to no other app.
 - "Translate to" changes the target language. Every language is cached per song,
   so switching back is instant and free.
 - No Spotify running? Open http://127.0.0.1:8899/?demo=1 for a demo track with
@@ -65,7 +88,7 @@ Open http://127.0.0.1:8899 and press play in Spotify.
 | `DEEPSEEK_MODEL` | Defaults to `deepseek-chat`. |
 | `PORT` | Defaults to `8899`. |
 | `DEFAULT_TARGET_LANG` | Defaults to `English`. |
-| `MPRIS_PLAYERS` | Comma separated player names to look for. Defaults to `spotify`. |
+| `MPRIS_PLAYERS` | Preference order when several players are open, e.g. `spotify,brave`. Anything not listed still shows up, just ranked last. |
 
 Spotify's Web API is supported as a fallback, for the case where music plays on
 another device (phone, another computer) and nothing is playing locally. Those
@@ -90,6 +113,7 @@ local app is playing, MPRIS is used and the Web API is never touched. The
     server/translate.mjs DeepSeek translation, disk cache
     server/auth.mjs      optional Spotify Web API OAuth (PKCE)
     public/              the page: index.html, app.js, styles.css
+    scripts/try-titles.mjs  check how a messy player title gets parsed
     data/                caches: lyrics, translations, tokens (not in git)
 
 ## Notes and limits
@@ -108,8 +132,15 @@ local app is playing, MPRIS is used and the Web API is never touched. The
 
 ## If it does not work
 
-- "The Spotify app is not running on this computer": start the desktop app.
-  The web player in a browser does not publish MPRIS, so it cannot be followed.
+- "No player is running on this computer": start Spotify, or play something in a
+  browser tab. The Spotify *web* player works through the browser, not through a
+  Spotify MPRIS entry, so keep the tab playing rather than muting it away.
+- YouTube shows no lyrics: the lookup needs a recognisable artist and title. Talk
+  videos, mixes and live streams have neither, and a wrong match is worse than
+  none, so nothing is shown.
+- A player is listed but does nothing: browsers leave stale MPRIS names behind
+  when a media session ends. They cannot be read or controlled, so they are
+  skipped; reload the page and the picker settles.
 - The page shows "Lernlied (demo)": that is the demo fallback. The transport
   buttons then only move the demo page, they cannot touch real playback.
 - The music does not stop when you press Pause: check
