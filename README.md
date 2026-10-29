@@ -34,8 +34,14 @@ video is readable like any other track. Two things make that usable:
 - Browsers expose only what the page tells them. A video without a media session,
   a stalled tab, or a tab that is not playing shows up as nothing at all.
 
-The same path covers local media files: players that report a filename
-("Artist - Song.mp4") get the extension stripped before the lookup.
+- The same path covers local media files: players that report a filename
+  ("Artist - Song.mp4") get the extension stripped before the lookup.
+
+Album art needs one more step. A browser hands out the artwork of the playing tab
+as a `file://` path to a temp file, and a page cannot load that. Sandboxed
+browsers (Flatpak, Snap) write it inside their own filesystem, where the path does
+not even exist from outside. `/api/art` reads it through `/proc/<pid>/root`, but
+only for image files inside temp and cache directories, with a size cap.
 
 ## Requirements
 
@@ -109,6 +115,7 @@ local app is playing, MPRIS is used and the Web API is never touched. The
 
     server/index.mjs     HTTP server, routes, page compilation
     server/player.mjs    MPRIS reader and transport controls (playerctl)
+    server/art.mjs       album art from local and sandboxed players
     server/lyrics.mjs    LRCLIB lookup, LRC parsing, plain lyric fallback
     server/translate.mjs DeepSeek translation, disk cache
     server/auth.mjs      optional Spotify Web API OAuth (PKCE)
@@ -141,6 +148,9 @@ local app is playing, MPRIS is used and the Web API is never touched. The
 - A player is listed but does nothing: browsers leave stale MPRIS names behind
   when a media session ends. They cannot be read or controlled, so they are
   skipped; reload the page and the picker settles.
+- Art is missing for a browser track: the artwork file only exists while that tab
+  is playing, and some browsers never write one. The page shows a placeholder
+  instead of a broken image.
 - The page shows "Lernlied (demo)": that is the demo fallback. The transport
   buttons then only move the demo page, they cannot touch real playback.
 - The music does not stop when you press Pause: check

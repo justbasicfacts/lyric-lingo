@@ -13,6 +13,7 @@ import {
 } from "./auth.mjs";
 import { cacheKey, describeTrack, findLyrics, readCache, writeCache } from "./lyrics.mjs";
 import { translateLines, translateWord } from "./translate.mjs";
+import { readArt } from "./art.mjs";
 import {
   listPlayers,
   mprisActive,
@@ -459,6 +460,22 @@ const server = createServer(async (req, res) => {
         source: page.source,
         note: page.note || "Preview mode: lyrics and translations only, no playback.",
       });
+    }
+
+    if (url.pathname === "/api/art") {
+      const entries = await listPlayers().catch(() => []);
+      const entry = pickPlayer(entries, url.searchParams.get("player") || undefined);
+      const art = await readArt(entry?.track?.artUrl, entry?.player || "").catch(() => null);
+      if (!art) {
+        res.writeHead(404, { "cache-control": "no-store" }).end("");
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": art.type,
+        "cache-control": "no-store",
+        "content-length": art.body.length,
+      });
+      return res.end(art.body);
     }
 
     if (url.pathname === "/api/players") {

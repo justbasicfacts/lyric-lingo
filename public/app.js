@@ -115,6 +115,14 @@ function renderPlayerPicker(players) {
   if (!current) auto.selected = true;
 }
 
+function showArt(image) {
+  if (image) {
+    if (ui.art.getAttribute("src") !== image) ui.art.src = image;
+  } else {
+    ui.art.removeAttribute("src");
+  }
+}
+
 function renderHeader() {
   const { track, authed } = state.data;
   ui.connect.hidden = !state.data.webApi || Boolean(authed);
@@ -128,8 +136,7 @@ function renderHeader() {
   document.title = `${track.title} | Lyric Lingo`;
   ui.title.textContent = track.title;
   ui.artist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
-  if (track.image) ui.art.src = track.image;
-  else ui.art.removeAttribute("src");
+  showArt(track.image);
 
   const bits = [];
   if (state.data.player?.label) bits.push(`via ${state.data.player.label}`);
@@ -610,6 +617,8 @@ document.addEventListener("visibilitychange", () => {
 });
 
 ui.build.textContent = MY_BUILD === "dev" ? "" : MY_BUILD;
+// A missing or refused artwork file should fall back to the placeholder.
+ui.art.addEventListener("error", () => ui.art.removeAttribute("src"));
 window.addEventListener("resize", () => highlightLine(state.renderedIndex));
 
 initPlayerPicker();

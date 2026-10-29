@@ -93,6 +93,19 @@ async function readPlayer(name) {
   const positionMs = Math.round(Number(position) / 1000) || 0;
   const label = playerLabel(name);
 
+  // Browsers hand out their artwork as a local temp file, which a page cannot
+  // load. Point the page at our own endpoint instead and let it proxy the file.
+  let image = null;
+  if (artUrl && /^https?:\/\//.test(artUrl)) {
+    image = artUrl;
+  } else if (artUrl && artUrl.startsWith("file://")) {
+    const token = createHash("sha1")
+      .update(`${artUrl}|${artist}|${title}`)
+      .digest("hex")
+      .slice(0, 8);
+    image = `/api/art?player=${encodeURIComponent(name)}&v=${token}`;
+  }
+
   return {
     player: name,
     label,
@@ -104,9 +117,8 @@ async function readPlayer(name) {
       title,
       artist: artist || "",
       album: album || "",
-      // A browser often reports its own cached art as a file:// path, which the
-      // page cannot load. Only absolute http(s) art is useful here.
-      image: artUrl && /^https?:\/\//.test(artUrl) ? artUrl : null,
+      image,
+      artUrl: artUrl || null,
       durationMs,
       url: null,
       demo: false,
